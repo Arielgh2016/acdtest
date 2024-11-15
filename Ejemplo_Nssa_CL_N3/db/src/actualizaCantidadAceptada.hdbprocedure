@@ -1,0 +1,78 @@
+PROCEDURE "actualizaCantidadAceptada" (
+    IN country NVARCHAR(6),
+    IN periodo NVARCHAR(7),
+    IN mes NVARCHAR(2),
+    IN anio NVARCHAR(4),
+    IN codperiodo INT,
+    IN dealer_id NVARCHAR(12),
+    IN usuario NVARCHAR(200),
+    OUT message NVARCHAR(5000),
+    OUT result BOOLEAN
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER
+AS
+BEGIN
+
+    DECLARE totNullCantAcept INTEGER;
+    DECLARE formatted_date NVARCHAR(8);
+    DECLARE mosAcept DECIMAL(4, 1);
+
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+        BEGIN
+          message = 'SQL Exception occured. Error Code is: ' || ::SQL_ERROR_CODE || ' Error message is: ' || ::SQL_ERROR_MESSAGE;
+          result = false;
+        END;
+        
+        totNullCantAcept := 0;
+
+        select count(*) into totNullCantAcept from DP_CL_N3_DISTRIBUCIONCOLORES 
+        where country = :country and dealer_id = :dealer_id and mes = :mes and anio = :anio and periodoasignacion = :periodo and cantidad_aceptada is null;
+
+        IF (totNullCantAcept > 0) THEN 
+
+          update DP_CL_N3_DISTRIBUCIONCOLORES
+          set cantidad_aceptada = cantidad
+          where country = :country and dealer_id = :dealer_id and mes = :mes and anio = :anio and periodoasignacion = :periodo;
+
+          -- Obtener la fecha actual
+          formatted_date := '' || TO_VARCHAR(YEAR(current_date), '9999') || '' || LPAD(TO_VARCHAR(MONTH(current_date), '99'), 2, '0') || '' || LPAD(EXTRACT(DAY FROM current_date), 2, '0');
+         
+          UPDATE DP_CL_N3_RESUMENASIGNACION RA
+          SET RA.cant_acept = (
+              SELECT SUM(DC.cantidad_aceptada)
+              FROM DP_CL_N3_DISTRIBUCIONCOLORES DC
+              WHERE DC.country = RA.country
+              AND DC.dealer_id = RA.dealer_id
+              AND DC.anio = RA.anio
+              AND DC.mes = RA.mes
+              AND DC.sku = RA.sku
+              AND DC.periodoasignacion = :periodo
+          ), RA.fecha_acept = :formatted_date, RA.user_acept = :usuario
+          WHERE RA.country = :country 
+          AND RA.dealer_id = :dealer_id 
+          AND RA.mes = :mes
+          AND RA.anio = :anio;
+
+
+          UPDATE DP_CL_N3_RESUMENASIGNACION RA
+          SET RA.acept_mos = CASE 
+                            WHEN RA.potenc_retail = 0 THEN '-' 
+                            ELSE TO_VARCHAR(ROUND(((RA.stock_dealer + RA.cant_acept - RA.potenc_retail) / RA.potenc_retail), 1), '9999.9')
+                            END
+          WHERE RA.country = :country 
+          AND RA.dealer_id = :dealer_id 
+          AND RA.mes = :mes
+          AND RA.anio = :anio;
+
+        message := 'Actualización realizada';
+        result := true;
+
+        ELSE
+
+        message := 'No existían registros por actualizar';
+        result := false;
+
+        END IF;
+
+END;

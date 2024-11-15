@@ -1,0 +1,128 @@
+PROCEDURE "asignaStockCentralArribos" (
+    IN icountry NVARCHAR(6),
+    IN isku NVARCHAR(15),
+    IN icodcolor NVARCHAR(10),
+    IN iperiodo NVARCHAR(7),
+    IN imes NVARCHAR(2),
+    IN ianio NVARCHAR(4),
+    IN idealer_id NVARCHAR(12),
+    IN iusuario NVARCHAR(200),
+    in iConStock BOOLEAN,
+    OUT message NVARCHAR(5000),
+    OUT result BOOLEAN
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER
+AS
+BEGIN
+    DECLARE nsam_id VARCHAR(100);
+    DECLARE num_sec INTEGER;
+    DECLARE orderId VARCHAR(20);
+    DECLARE indice_nsam NVARCHAR(20);
+    DECLARE fecha_actual SECONDDATE;
+    DECLARE eim VARCHAR(18);
+    DECLARE periodoTomada NVARCHAR(7);
+    DECLARE estatus BOOLEAN;
+    DECLARE monthTomada NVARCHAR(2);
+    DECLARE dayTomada NVARCHAR(2);
+    DECLARE yearTomada NVARCHAR(4);
+    DECLARE formatted_date NVARCHAR(8);
+    DECLARE lv_count_unidades_asignadas INTEGER;
+    DECLARE CURSOR oResponseSKU_DETAILS_Stock FOR SELECT SD.eim FROM DP_CL_N3_SKU_DETAILS SD WHERE SD.country = :icountry AND SD.sku = :isku ORDER BY SD.distribution_order ASC;
+    DECLARE CURSOR oResponseSKU_DETAILS_Arribos FOR SELECT SD.eim FROM DP_CL_N3_SKU_DETAILS SD WHERE SD.country = :icountry AND SD.sku = :isku ORDER BY SD.distribution_order ASC;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        message = 'SQL Exception occured. Error Code is: ' || ::SQL_ERROR_CODE || ' Error message is: ' || ::SQL_ERROR_MESSAGE;
+        result = false;
+    END;
+
+    CREATE LOCAL TEMPORARY COLUMN TABLE #TMP_UNIDADES_ASIGNADASS (
+        ID_ORDER_VP_NSAM NVARCHAR(20),
+        ASSIGNMENT_PERIOD NVARCHAR(7),
+        EIM NVARCHAR(18),
+        IDORDENDP NVARCHAR(20)
+    );
+
+    IF (:iConStock = true) THEN
+
+        FOR unidades as oResponseSKU_DETAILS_Stock
+        DO
+
+            INSERT INTO #TMP_UNIDADES_ASIGNADASS(ID_ORDER_VP_NSAM,ASSIGNMENT_PERIOD,EIM,IDORDENDP)
+            SELECT MP.ID_ORDER_VP_NSAM, MP.ASSIGNMENT_PERIOD, MP.EIM, ''
+            FROM DP_CL_N3_MAESTROPRODUCCION MP
+            INNER JOIN DP_CL_N3_SKU_DETAILS SD ON SD.eim = MP.EIM
+                                          AND SD.country = MP.COUNTRY
+                                          AND SD.sku = :isku
+            WHERE MP.COUNTRY = :icountry
+            AND SD.EIM = unidades.eim
+            AND (MP.BLOQUEADO is null OR  MP.BLOQUEADO = '')
+            AND MP.STOCK_PISO = 'X'          
+            AND MP.STATUS_VEHICLE = '01'
+            AND MP.EXTERIOR_COLOR_CODE = :icodcolor
+            AND MP.ID_ORDER_VP_NSAM NOT IN (SELECT DA.ID_ORDER_VP_NSAM FROM DP_CL_N3_DETALLEASIGNACION DA WHERE DA.COUNTRY = :icountry AND DA.CODESTADOASIGNACION = 1)
+            ORDER BY MP.ID_ORDER_VP_NSAM ASC;
+
+        END FOR;
+
+    END IF;
+
+        FOR unidades as oResponseSKU_DETAILS_Arribos
+            DO
+    
+            INSERT INTO #TMP_UNIDADES_ASIGNADASS (ID_ORDER_VP_NSAM,ASSIGNMENT_PERIOD,EIM,IDORDENDP)
+            SELECT MP.ID_ORDER_VP_NSAM, MP.ASSIGNMENT_PERIOD, MP.EIM, ''
+            FROM DP_CL_N3_MAESTROPRODUCCION MP
+            INNER JOIN DP_CL_N3_SKU_DETAILS SD ON SD.eim = MP.EIM
+                                                AND SD.country = MP.COUNTRY
+                                                AND SD.sku = :isku
+            WHERE MP.COUNTRY = :icountry
+            AND MP.ASSIGNMENT_PERIOD = :iperiodo
+            AND SD.EIM = unidades.eim
+            AND (MP.BLOQUEADO is null OR  MP.BLOQUEADO = '')
+            AND (MP.STOCK_PISO is null OR MP.STOCK_PISO = '')         
+            AND MP.STATUS_VEHICLE = '01'
+            AND MP.EXTERIOR_COLOR_CODE = :icodcolor
+            AND MP.ID_ORDER_VP_NSAM NOT IN (SELECT DA.ID_ORDER_VP_NSAM FROM DP_CL_N3_DETALLEASIGNACION DA WHERE DA.COUNTRY = :icountry AND DA.CODESTADOASIGNACION = 1)
+            ORDER BY MP.ID_ORDER_VP_NSAM ASC;
+    
+        END FOR;
+
+    SELECT COUNT(*) INTO lv_count_unidades_asignadas FROM #TMP_UNIDADES_ASIGNADASS;
+
+    IF (lv_count_unidades_asignadas > 0) THEN
+
+        SELECT tmp.ID_ORDER_VP_NSAM, tmp.EIM, tmp.ASSIGNMENT_PERIOD INTO nsam_id, eim, periodoTomada
+        FROM (
+            SELECT ID_ORDER_VP_NSAM, EIM, ASSIGNMENT_PERIOD, ROW_NUMBER() OVER () AS row_num
+            FROM #TMP_UNIDADES_ASIGNADASS -- Asegúrate de que el nombre de la tabla sea correcto
+        ) AS tmp
+        WHERE row_num = 1
+        LIMIT 1;
+       num_sec := CEILING(RAND() * 900) + 100;
+       indice_nsam := SUBSTR(nsam_id, LENGTH(:icountry) + 3);
+       orderId := 'DP' || indice_nsam || num_sec;
+       fecha_actual := CAST(CURRENT_TIMESTAMP AS SECONDDATE);
+
+       INSERT INTO DP_CL_N3_DETALLEASIGNACION (IDORDENDP,ID_ORDER_VP_NSAM,COUNTRY,EIM,CODCANAL,SKU,MES,ANIO,DEALER_ID,FECHA_ASIG,USUARIO,CODESTADOASIGNACION,IS_FREEDEMAND0,FECHA_MODIFICACION,OBSERVACION,CODCOLOR,TIPO_ASIG)
+       VALUES(:orderId,:nsam_id,:icountry,:eim,'10',:isku,:imes,:ianio,:idealer_id,:fecha_actual,:iusuario,1,null,:fecha_actual,'Unidad asignada en: '|| :iperiodo,null,'A');
+
+       -- Obtener la fecha actual
+       formatted_date := '' || LPAD(TO_VARCHAR(MONTH(current_date), '99'), 2, '0') || '-' || TO_VARCHAR(YEAR(current_date), '9999');
+
+       UPDATE DP_CL_N3_MAESTROPRODUCCION SET  DEALER_ID = :idealer_id, DATE_ASSIGNMENT = :formatted_date, CODCANAL = '10', SKU = :isku
+       WHERE ID_ORDER_VP_NSAM = :nsam_id AND ASSIGNMENT_PERIOD = :periodoTomada AND EIM = :eim AND COUNTRY = :icountry;
+
+        message := 'Procedimiento ok : ' || :lv_count_unidades_asignadas;
+        estatus := true;
+    ELSE
+        message := 'Procedimiento nok : ' || :lv_count_unidades_asignadas;
+        estatus := false;
+    END IF;
+
+    DROP TABLE #TMP_UNIDADES_ASIGNADASS;
+
+    message := message;
+    result := estatus;
+
+END;

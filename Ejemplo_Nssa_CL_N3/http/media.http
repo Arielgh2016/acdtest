@@ -1,0 +1,8 @@
+POST http://localhost:4004/catalog/cl_n3_sku_media
+Content-Type: application/json
+Authorization: Basic dealerp_n3 JWT54&$1aWeps5#
+
+{
+    "country": "NCHL",
+    "model" : "KICKS-7"
+}

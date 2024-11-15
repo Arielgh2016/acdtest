@@ -1,0 +1,26 @@
+{
+    "DP_CL_N3_VLCVEHICLE_ABAP": {
+      "target": {
+        "object": "TB_CLABAPTABLES_VLCVEHICLE",
+        "schema": "PRD"
+      }
+    },
+    "DP_CL_N3_VBRP_ABAP": {
+      "target": {
+        "object": "TB_CLABAPTABLES_VBRP",
+        "schema": "PRD"
+      }
+    },
+    "DP_CL_N3_VBRK_ABAP": {
+      "target": {
+        "object": "TB_CLABAPTABLES_VBRK",
+        "schema": "PRD"
+      }
+    },
+    "DP_CL_N3_KNA1_ABAP": {
+      "target": {
+        "object": "TB_CLABAPTABLES_KNA1",
+        "schema": "PRD"
+      }
+    }
+}

@@ -1,0 +1,59 @@
+_schema-version: '3.1'
+ID: Nissan_CL_N3
+version: 1.0.0
+description: "A simple CAP project."
+parameters:
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npx -p @sap/cds-dk cds build --production
+modules:
+  - name: Nissan_CL_N3-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      buildpack: nodejs_buildpack
+    build-parameters:
+      builder: npm-ci
+    provides:
+      - name: srv-api # required by consumers of CAP services (e.g. approuter)
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: Nissan_CL_N3_hdi
+
+  - name: Nissan_CL_N3_hdi-deployer
+    type: hdb
+    path: gen/db
+    requires:
+      - name: Nissan_CL_N3_hdi
+        properties:
+          TARGET_CONTAINER: ~{hdi-container-name}
+      - name: Nissan-PRD-hdi
+        group: SERVICE_REPLACEMENTS
+        properties:
+          key: nissan-hdi
+          service: ~{nissan-hdi}
+    parameters:
+      buildpack: nodejs_buildpack
+      memory: 512M
+      instances: 2
+      stack: cflinuxfs4
+resources:
+  - name: Nissan_CL_N3_hdi
+    type: com.sap.xs.hdi-container
+    parameters:
+      config: 
+        schema: Nissan_CL_N3
+      service: hana
+      service-plan: hdi-shared
+    properties:
+      hdi-container-name: ${service-name}
+  - name: Nissan-PRD-hdi
+    type: org.cloudfoundry.existing-service
+    parameters:
+      service-name: Nissan-PRD-hdi
+    properties:
+      nissan-hdi: ${service-name}

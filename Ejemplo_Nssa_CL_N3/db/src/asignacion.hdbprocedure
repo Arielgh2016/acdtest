@@ -1,0 +1,316 @@
+PROCEDURE "asignacion" (
+    IN country NVARCHAR(6),
+    IN periodo NVARCHAR(7),
+    IN mes NVARCHAR(2),
+    IN anio NVARCHAR(4),
+    IN codperiodo INT,
+    IN dealer_id NVARCHAR(12),
+    IN dealer_name NVARCHAR(60),
+    IN usuario NVARCHAR(200),
+    OUT message NVARCHAR(5000),
+    OUT result BOOLEAN
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER
+AS
+BEGIN
+
+    DECLARE totUnidadesStockCentral INTEGER;
+    DECLARE cantidadUnidadesStockPorSKU INTEGER;
+    DECLARE cantidadStockCentral INTEGER;
+    DECLARE size nvarchar(200);
+    --DECLARE size INTEGER;
+    DECLARE sizeCorregido nvarchar(200);
+    DECLARE i int;
+    DECLARE totDetAsigPorSKUColor INTEGER;
+    DECLARE totreg INTEGER;
+    DECLARE contReg INTEGER;
+    DECLARE verificaTotDetAsig INTEGER;
+    DECLARE verificaTotDetAsigSinSTOCK INTEGER;
+    DECLARE diferenciaCancelar INTEGER;      
+    DECLARE contUnidadSelEsStock INTEGER;
+    DECLARE total_dealers INTEGER;
+    DECLARE total_dealer INTEGER;
+    DECLARE contStock INTEGER;
+    DECLARE varCodColor NVARCHAR(10);
+    DECLARE varSku NVARCHAR(15);
+    DECLARE actualizaIdNSAM NVARCHAR(20);
+    DECLARE seleccionaIDNSAM NVARCHAR(20);
+    DECLARE seleccionaIDORDENDP NVARCHAR(20);
+    DECLARE seleccionaEIM NVARCHAR(18);
+    DECLARE seleccionaSTOCKPISO NVARCHAR(1);
+    DECLARE actualizaASSPER NVARCHAR(7);
+    DECLARE actualizaEIM NVARCHAR(18);
+    DECLARE fecha_actual SECONDDATE;    
+    DECLARE skuAnterior NVARCHAR(15);
+    DECLARE sys BOOLEAN;
+    DECLARE msg NVARCHAR(5000);
+    DECLARE CURSOR mycur FOR SELECT DC.country, DC.periodoasignacion, DC.sku, DC.cantidad, DC.dealer_id, DC.anio, DC.mes, DC.codcolor, DC.cantidad_aceptada
+      FROM DP_CL_N3_DISTRIBUCIONCOLORES DC
+        WHERE DC.country = :country
+        AND DC.anio = :anio
+        AND DC.mes = :mes
+        AND DC.periodoasignacion = :periodo
+        AND DC.dealer_id = :dealer_id
+        --AND DC.sku = 'N182C07'
+        AND DC.cantidad_aceptada > 0
+        AND DC.cantidad_aceptada is not null;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+        BEGIN
+          message = 'SQL Exception occured. Error Code is: ' || ::SQL_ERROR_CODE || ' Error message is: ' || ::SQL_ERROR_MESSAGE;
+          result = false;
+        END;
+
+        CREATE LOCAL TEMPORARY COLUMN TABLE #TMP_IDNSAM_UNIDADES_ASIGNADAS (
+          ID_ORDER_VP_NSAM NVARCHAR(20),
+          IDORDENDP NVARCHAR(20),
+          STOCK_PISO NVARCHAR(1),
+          EIM NVARCHAR(18),
+          ESTADO NVARCHAR(1)
+        );        
+
+        SELECT COUNT(*) INTO totreg
+        FROM DP_CL_N3_DISTRIBUCIONCOLORES DC
+          WHERE DC.country = :country
+          AND DC.anio = :anio
+          AND DC.mes = :mes
+          AND DC.periodoasignacion = :periodo
+          AND DC.dealer_id = :dealer_id
+          AND DC.cantidad_aceptada > 0
+          AND DC.cantidad_aceptada is not null;
+
+        contStock := 0;
+        contReg := 0;
+        FOR asignacion as mycur
+          DO
+
+          --size := ABS(asignacion.cantidad);
+          size := ABS(asignacion.cantidad_aceptada);
+          contReg := :contReg + 1;
+          varCodColor := asignacion.codcolor;
+          varSku := asignacion.sku;          
+
+          SELECT COUNT(*) INTO totDetAsigPorSKUColor FROM DP_CL_N3_DETALLEASIGNACION DA
+          INNER JOIN DP_CL_N3_MAESTROPRODUCCION MP
+          ON MP.ID_ORDER_VP_NSAM = DA.id_order_vp_nsam
+          AND MP.COUNTRY = :country
+          AND (MP.EXTERIOR_COLOR_CODE is not null OR MP.EXTERIOR_COLOR_CODE != '')
+          AND MP.EXTERIOR_COLOR_CODE = :varCodColor
+          WHERE DA.country = :country
+          AND DA.anio = :anio
+          AND DA.mes = :mes
+          AND DA.dealer_id = :dealer_id
+          AND DA.sku = :varSku
+          AND DA.codestadoasignacion BETWEEN 1 AND 4
+          AND DA.tipo_asig = 'A';
+
+          IF (skuAnterior != asignacion.sku) THEN 
+            contStock := 0; 
+          END IF;
+         
+          i := 0;          
+          WHILE :i < :size DO  
+            i := :i + 1;
+            seleccionaIDNSAM := '';
+            seleccionaIDORDENDP := '';
+            seleccionaEIM := '';
+            seleccionaSTOCKPISO := '';
+            contUnidadSelEsStock := 0;
+            IF(totDetAsigPorSKUColor > 0) THEN
+              -- Seleccionamos un registro del detalleAsignacion para verificar si es STOCK.
+              INSERT INTO #TMP_IDNSAM_UNIDADES_ASIGNADAS (ID_ORDER_VP_NSAM, IDORDENDP,STOCK_PISO,EIM,ESTADO)
+              SELECT DA.id_order_vp_nsam, DA.idordendp, MP.STOCK_PISO, DA.eim, 'S'
+              FROM DP_CL_N3_DETALLEASIGNACION DA
+				INNER JOIN DP_CL_N3_MAESTROPRODUCCION MP
+				  ON MP.ID_ORDER_VP_NSAM = DA.id_order_vp_nsam
+				  AND MP.ID_ORDER_VP_NSAM NOT IN (SELECT TMP.ID_ORDER_VP_NSAM FROM #TMP_IDNSAM_UNIDADES_ASIGNADAS TMP)
+				  AND MP.EXTERIOR_COLOR_CODE = :varCodColor
+              WHERE DA.country = :country
+                AND DA.anio = :anio
+                AND DA.mes = :mes
+                AND DA.dealer_id = :dealer_id
+                AND DA.sku = :varSku
+                AND DA.codestadoasignacion = 1
+                AND DA.tipo_asig = 'A'
+                AND DA.id_order_vp_nsam =  MP.ID_ORDER_VP_NSAM
+              LIMIT 1;
+
+              -- Verificamos la unidad seleccionada y existente en detalle de asignacion
+            	SELECT COUNT(*) INTO contUnidadSelEsStock FROM #TMP_IDNSAM_UNIDADES_ASIGNADAS WHERE ESTADO = 'S';
+            	SELECT * FROM #TMP_IDNSAM_UNIDADES_ASIGNADAS;
+	            IF (contUnidadSelEsStock > 0) THEN
+	            	SELECT ID_ORDER_VP_NSAM, IDORDENDP, EIM, STOCK_PISO INTO seleccionaIDNSAM, seleccionaIDORDENDP, seleccionaEIM, seleccionaSTOCKPISO FROM #TMP_IDNSAM_UNIDADES_ASIGNADAS WHERE ESTADO = 'S';
+	            END IF;
+
+            END IF;
+            
+			 IF (codperiodo = 1) THEN
+              totUnidadesStockCentral := stockCentralPorSKU(asignacion.country, asignacion.sku);
+              --cantidadUnidadesStockPorSKU := pesoDealerPorSKU(asignacion.country, asignacion.anio, asignacion.mes, asignacion.periodoasignacion, asignacion.sku, asignacion.dealer_id);
+
+              -- Totalizo la cant_ajust para el dealer que tiene el sku para el periodo buscado
+              SELECT sum(RA.cant_ajust) INTO total_dealer FROM DP_CL_N3_RESUMENASIGNACION RA 
+              WHERE RA.country = :country 
+              AND RA.periodoproceso = :periodo 
+              AND RA.sku = :varSku
+              AND RA.dealer_id = :dealer_id
+              AND RA.dealer_id in (SELECT DD.dealer_id FROM DP_CL_N3_DEALERS_DETAILS DD WHERE DD.country = :country AND ((DD.validity_date_end is not null OR DD.validity_date_end != '') AND DD.validity_date_end <= CURRENT_DATE));
+
+              -- Totalizo la cant_ajust de todos los dealers que tiene el sku para el periodo buscado
+              SELECT sum(RA.cant_ajust) INTO total_dealers FROM DP_CL_N3_RESUMENASIGNACION RA 
+              WHERE RA.country = :country 
+              AND RA.periodoproceso = :periodo
+              AND RA.anio = :anio
+              AND RA.mes = :mes
+              AND RA.sku = :varSku
+              AND RA.dealer_id in (SELECT DD.dealer_id FROM DP_CL_N3_DEALERS_DETAILS DD WHERE DD.country = :country AND ((DD.validity_date_end is not null OR DD.validity_date_end != '') AND DD.validity_date_end <= CURRENT_DATE));
+              
+              IF (total_dealer > 0 AND total_dealers > 0) THEN
+                cantidadUnidadesStockPorSKU := ((total_dealer * 100) / total_dealers);
+              ELSE
+                cantidadUnidadesStockPorSKU := 0;
+              END IF;
+              cantidadStockCentral := 0;
+              IF (cantidadUnidadesStockPorSKU > 0) THEN
+                  cantidadStockCentral = ((totUnidadesStockCentral*cantidadUnidadesStockPorSKU)/100);
+              END IF;
+            END IF;            
+			IF (totDetAsigPorSKUColor > 0 AND seleccionaIDNSAM != '') THEN
+			----
+				IF((seleccionaSTOCKPISO = '' OR seleccionaSTOCKPISO is null) AND cantidadStockCentral > 0 AND contStock <= cantidadStockCentral) THEN 
+				  contStock := :contStock + 1;
+				  CALL "verificaReemplazaStockCentralArribos"(:country, asignacion.sku, asignacion.codcolor, :periodo, :mes, :anio, :dealer_id, :usuario, :seleccionaIDNSAM, :seleccionaIDORDENDP, :seleccionaEIM, true, :message, :result);
+				  UPDATE #TMP_IDNSAM_UNIDADES_ASIGNADAS SET ESTADO = 'P' WHERE ESTADO = 'S';
+				ELSE
+				  UPDATE #TMP_IDNSAM_UNIDADES_ASIGNADAS SET ESTADO = 'P' WHERE ESTADO = 'S';
+				END IF;
+			
+			ELSE
+			--- Se busca la unidad en stock o arribos y se asigna la unidad
+				IF (cantidadStockCentral > 0 AND contStock <= cantidadStockCentral) THEN 
+				contStock := :contStock + 1;
+				CALL "asignaStockCentralArribos"(:country, asignacion.sku, asignacion.codcolor, :periodo, :mes, :anio, :dealer_id, :usuario, true, :message, :result);
+				
+			ELSEIF (total_dealer = 0 OR total_dealers = 0) THEN
+				
+				CALL "asignaStockCentralArribos"(:country, asignacion.sku, asignacion.codcolor, :periodo, :mes, :anio, :dealer_id, :usuario, true, :message, :result);
+        	
+      ELSE
+				
+				CALL "asignaStockCentralArribos"(:country, asignacion.sku, asignacion.codcolor, :periodo, :mes, :anio, :dealer_id, :usuario, false, :message, :result);
+				
+				END IF;
+			
+			END IF;       
+          END WHILE;
+
+          skuAnterior := :asignacion.sku;
+          
+          -- Debemos cancelar las unidades que sobran en detalle de asignación.
+
+          IF (:totDetAsigPorSKUColor > 0 AND :totDetAsigPorSKUColor > :size) THEN
+          
+        	diferenciaCancelar := (totDetAsigPorSKUColor - size);
+        
+          UPDATE DP_CL_N3_DETALLEASIGNACION DA SET DA.codestadoasignacion = 5, DA.observacion = 'Asignación cancelada'
+          WHERE DA.country = :country
+          AND DA.anio = :anio
+          AND DA.mes = :mes
+          AND DA.dealer_id = :dealer_id
+          AND DA.sku = :varSku
+          AND DA.codestadoasignacion = 1
+          AND DA.tipo_asig = 'A'
+          and DA.id_order_vp_nsam IN (SELECT DA.id_order_vp_nsam FROM DP_CL_N3_DETALLEASIGNACION DA
+                        INNER JOIN DP_CL_N3_MAESTROPRODUCCION MP
+                          ON MP.ID_ORDER_VP_NSAM = DA.id_order_vp_nsam
+                          AND MP.EXTERIOR_COLOR_CODE = :varCodColor			
+                        INNER JOIN DP_CL_N3_SKU_DETAILS SD
+                          ON SD.eim = DA.eim
+                          AND SD.country = DA.country
+                          AND SD.sku = DA.sku
+                        WHERE DA.country = :country
+                        AND DA.anio = :anio
+                        AND DA.mes = :mes
+                        AND DA.dealer_id = :dealer_id
+                        AND DA.sku = :varSku
+                        AND DA.codestadoasignacion = 1
+                        AND DA.tipo_asig = 'A'
+                        ORDER BY SD.distribution_order ASC
+                        LIMIT :diferenciaCancelar);
+                        
+          -- Actualiza en null los datos del maestro de producción para aquellos id_sam cancelados en el detalle de asignacion
+          UPDATE DP_CL_N3_MAESTROPRODUCCION MP SET MP.DEALER_ID = null, MP.DATE_ASSIGNMENT = null, MP.CODCANAL = null, MP.SKU = null
+          WHERE MP.ID_ORDER_VP_NSAM IN (SELECT DA.id_order_vp_nsam FROM DP_CL_N3_DETALLEASIGNACION DA
+                      INNER JOIN DP_CL_N3_MAESTROPRODUCCION MP
+                        ON MP.ID_ORDER_VP_NSAM = DA.id_order_vp_nsam
+                        AND MP.EXTERIOR_COLOR_CODE = :varCodColor	        
+                      WHERE DA.country = :country
+                        AND DA.anio = :anio
+                        AND DA.mes = :mes
+                        AND DA.dealer_id = :dealer_id
+                        AND DA.sku = :varSku
+                        AND DA.codestadoasignacion = 5
+                        AND DA.tipo_asig = 'A');
+          
+          END IF;
+          
+          DELETE FROM #TMP_IDNSAM_UNIDADES_ASIGNADAS;
+
+        END FOR;
+
+        DROP TABLE #TMP_IDNSAM_UNIDADES_ASIGNADAS;
+
+        --- Se realiza una verificación de las unidades existentes en detalleAsigación con el fin de cancelar las unidades(SKU-COLOR) que ya no tienen distribución de colores
+        UPDATE DP_CL_N3_DETALLEASIGNACION DA SET DA.codestadoasignacion = 5, DA.observacion = 'Asignación cancelada'
+        WHERE DA.country = :country
+        AND DA.anio = :anio
+        AND DA.mes = :mes
+        AND DA.dealer_id = :dealer_id
+        AND DA.codestadoasignacion = 1
+        AND DA.tipo_asig = 'A'
+        and DA.id_order_vp_nsam IN (
+          SELECT DA.id_order_vp_nsam
+          FROM DP_CL_N3_DETALLEASIGNACION DA
+          INNER JOIN DP_CL_N3_MAESTROPRODUCCION MP
+            ON MP.ID_ORDER_VP_NSAM = DA.id_order_vp_nsam		
+          WHERE DA.country = :country
+            AND DA.anio = :anio
+            AND DA.mes = :mes
+            AND DA.dealer_id = :dealer_id
+            AND DA.codestadoasignacion = 1
+            AND DA.tipo_asig = 'A'
+            AND (DA.anio,DA.mes,DA.dealer_id,DA.sku,MP.EXTERIOR_COLOR_CODE) NOT IN (SELECT DC.anio, DC.mes, DC.dealer_id, DC.sku, DC.codcolor 
+                                                    FROM DP_CL_N3_DISTRIBUCIONCOLORES DC
+                                                      WHERE DC.country = :country
+                                                        AND DC.anio = :anio
+                                                        AND DC.mes = :mes
+                                                        AND DC.periodoasignacion = :periodo
+                                                        AND DC.dealer_id = :dealer_id
+                                                        --AND DC.cantidad > 0));
+                                                        AND DC.cantidad_aceptada > 0
+                                                        AND DC.cantidad_aceptada is not null));
+                                                        
+          -- Actualiza en null los datos del maestro de producción para aquellos id_sam cancelados en el detalle de asignacion
+          UPDATE DP_CL_N3_MAESTROPRODUCCION MP SET MP.DEALER_ID = null, MP.DATE_ASSIGNMENT = null, MP.CODCANAL = null, MP.SKU = null
+          WHERE MP.ID_ORDER_VP_NSAM IN (SELECT DA.id_order_vp_nsam 
+                                        FROM DP_CL_N3_DETALLEASIGNACION DA
+                                          WHERE DA.country = :country
+                                            AND DA.anio = :anio
+                                            AND DA.mes = :mes
+                                            AND DA.dealer_id = :dealer_id
+                                            AND DA.codestadoasignacion = 5
+                                            AND DA.tipo_asig = 'A');	                                                        
+
+        IF (contReg = totreg AND i = size) THEN
+
+          UPDATE DP_CL_N3_PROCESOPERIODO SET codestado = 10 WHERE country = :country AND codperiodo = :codperiodo AND mes = :mes AND anio = :anio AND dealer_id = :dealer_id;
+
+        ELSEIF (totreg = 0) THEN
+
+          UPDATE DP_CL_N3_PROCESOPERIODO SET codestado = 10 WHERE country = :country AND codperiodo = :codperiodo AND mes = :mes AND anio = :anio AND dealer_id = :dealer_id;
+        
+        END IF;
+         
+        message := message;
+        result := true;
+END;

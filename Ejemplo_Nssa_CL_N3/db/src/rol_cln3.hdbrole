@@ -1,0 +1,17 @@
+{ 
+  "role":{ 
+    "name": "rol_cln3",
+    "schema_privileges":[ 
+        {
+            "privileges": [
+              "EXECUTE",
+              "INSERT",
+              "SELECT",
+              "ALTER",
+              "DELETE",
+              "UPDATE"
+            ]
+        }
+    ]
+  } 
+}

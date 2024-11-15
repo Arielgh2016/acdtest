@@ -1,0 +1,14 @@
+TYPE TT_UNIDADESPROCESADAS AS TABLE(
+    ID_ORDER_VP_NSAM	        NVARCHAR(20),
+    IDORDENDP			        NVARCHAR(20),
+    CANAL	    		        NVARCHAR(5),
+    COUNTRY				        NVARCHAR(17),
+    DEALER_ID			        NVARCHAR(12),
+    MES				            NVARCHAR(2),
+    ANIO				        NVARCHAR(4),
+    NUM_DOCUMENTO               NVARCHAR(20),
+    CLASE_DOCUMENTO             NVARCHAR(5),
+	DES_DOCUMENTO               NVARCHAR(60),
+	FEC_DOCUMENTO               SECONDDATE,
+    DATE_CREATION_ORDER_VP_NSAM NVARCHAR(8)     
+)

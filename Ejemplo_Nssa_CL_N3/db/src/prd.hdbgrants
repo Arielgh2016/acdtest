@@ -1,0 +1,14 @@
+{
+    "nissan-hdi": {
+        "object_owner": {
+            "container_roles": [
+                "crossdb#"
+            ]
+        },
+        "application_user": {
+            "container_roles": [
+                "crossdb"
+            ]
+        }
+    }
+}

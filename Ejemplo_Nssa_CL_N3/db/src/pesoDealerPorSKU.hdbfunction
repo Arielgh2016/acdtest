@@ -1,0 +1,25 @@
+FUNCTION pesoDealerPorSKU (country String, anio String, mes String, periodo String, sku String, dealer_id String)
+  RETURNS valorPesoDealerPorSKU INTEGER
+  LANGUAGE SQLSCRIPT READS SQL DATA
+AS
+BEGIN
+    DECLARE total_dealers INTEGER;
+    DECLARE total_dealer INTEGER;
+
+    valorPesoDealerPorSKU := 0;
+
+    -- Totalizo la cant_ajust de todos los dealers que tiene el sku para el periodo buscado
+    SELECT sum(RA.cant_ajust) INTO total_dealers FROM DP_CL_N3_RESUMENASIGNACION RA 
+    WHERE RA.country = country 
+    AND RA.periodoproceso = periodo
+    AND RA.anio = anio
+    AND RA.mes = mes
+    AND RA.sku = sku
+    AND RA.dealer_id in (SELECT DD.dealer_id FROM DP_CL_N3_DEALERS_DETAILS DD WHERE DD.country = country AND ((DD.validity_date_end is not null OR DD.validity_date_end != '') AND DD.validity_date_end <= CURRENT_DATE));
+
+    -- 
+    ---valorPesoDealerPorSKU := ((total_dealer * 100) / total_dealers);
+
+    valorPesoDealerPorSKU := total_dealers;
+
+END;

@@ -1,0 +1,15 @@
+@server = http://localhost:4004
+@me = Authorization: Basic dealerp_n3 JWT54&$1aWeps5#
+
+
+### ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Get cl_n3_DistribucionColores
+GET {{server}}/v2/catalog/cl_n3_DistribucionColores?$expand=NavToColor,NavToDealer&$filter=mes eq 3 and anio eq 2024 and dealer_id eq 'CLDN01259' and country eq 'NCHL' and sku eq 'VERSA1'
+Content-Type: application/json
+{{me}}
+
+### ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Get cl_n3_ResumenAsignacion
+GET {{server}}/v2/catalog/cl_n3_resumenasignacion?$expand=NavToVehiculo,NavToVehiculo/NavToMedia,NavToPeriodo,NavToDistColor,NavToDistColor/NavToColor&$filter=dealer_id eq 'CLDN01259' and mes eq 03 and anio eq 2024 and codperiodo eq 1
+Content-Type: application/json
+{{me}}

@@ -1,0 +1,16 @@
+{
+	"auth": {
+		"passport": {
+			"strategy": "mock",
+			"users": {
+				"nsamvp": {
+					"password": "JWT54&$1aWeps5#",
+					"ID": "dealerp_n3",
+					"roles": [
+						"authenticated-user"
+					]
+				}
+			}
+		}
+	}
+}

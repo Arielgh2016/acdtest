@@ -1,0 +1,63 @@
+PROCEDURE "stockDisponible" (
+    IN country NVARCHAR(6),
+    IN mes NVARCHAR(2),
+    IN anio NVARCHAR(4),
+    IN periodo NVARCHAR(7),
+    IN codperiodo INT,
+    IN sku NVARCHAR(15),
+    OUT message NVARCHAR(5000),
+    OUT result BOOLEAN
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER 
+AS
+BEGIN
+    DECLARE lv_count_arribos INTEGER;
+    DECLARE lv_count_stock_piso INTEGER;
+    DECLARE sys BOOLEAN;
+    DECLARE msg NVARCHAR(5000);
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+        BEGIN
+          message = 'SQL Exception occured. Error Code is: ' || ::SQL_ERROR_CODE || ' Error message is: ' || ::SQL_ERROR_MESSAGE;
+          result = false;
+        END;
+
+        SELECT COUNT(*) INTO lv_count_arribos
+        FROM DP_CL_N3_MAESTROPRODUCCION MP
+        INNER JOIN DP_CL_N3_SKU_DETAILS SD ON SD.eim = MP.EIM
+                                          AND SD.country = MP.COUNTRY
+                                          AND SD.sku = :sku
+        WHERE MP.ASSIGNMENT_PERIOD = :periodo
+          AND MP.COUNTRY = :country
+          AND SD.sku = :sku
+          AND (MP.BLOQUEADO is null OR  MP.BLOQUEADO = '')
+          AND (MP.STOCK_PISO is null OR MP.STOCK_PISO != 'X')         
+          AND MP.STATUS_VEHICLE = '01'
+          AND MP.ID_ORDER_VP_NSAM NOT IN (SELECT ID_ORDER_VP_NSAM FROM DP_CL_N3_DETALLEASIGNACION WHERE COUNTRY = :country AND CODESTADOASIGNACION = 1);
+
+          SELECT COUNT(*) INTO lv_count_stock_piso
+          FROM DP_CL_N3_MAESTROPRODUCCION MP
+          INNER JOIN DP_CL_N3_SKU_DETAILS SD ON SD.eim = MP.EIM
+                                            AND SD.country = MP.COUNTRY
+                                            AND SD.sku = :sku
+          WHERE MP.COUNTRY = :country
+            AND SD.sku = :sku
+            AND (MP.BLOQUEADO is null OR  MP.BLOQUEADO = '')
+            AND MP.STOCK_PISO = 'X'          
+            AND MP.STATUS_VEHICLE = '01'
+            AND MP.ID_ORDER_VP_NSAM NOT IN (SELECT ID_ORDER_VP_NSAM FROM DP_CL_N3_DETALLEASIGNACION WHERE COUNTRY = :country AND CODESTADOASIGNACION = 1);          
+
+        UPDATE DP_CL_N3_WHOLESALE_FORECAST
+          SET stock_disp = (:lv_count_arribos + :lv_count_stock_piso)
+              WHERE country = :country
+              AND year = :anio
+              AND month = :mes
+              AND codperiodo = :codperiodo
+              AND sku = :sku;              
+        
+        msg := CONCAT('Procedimiento ok : ', '' || :country || ' ' || :periodo || ' ' || :sku || ' ' || (:lv_count_arribos + :lv_count_stock_piso));
+        sys = true;
+
+        message = msg;
+        result = sys;
+END;
