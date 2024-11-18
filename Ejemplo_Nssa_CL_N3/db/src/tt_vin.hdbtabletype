@@ -1,3 +1,0 @@
-TYPE TT_VIN AS TABLE(
-    vin	        NVARCHAR(17)
-)
