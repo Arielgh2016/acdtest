@@ -34,5 +34,6 @@ entity Producto {
     Stock  : Integer;
     Descripcion : String;
     PaisOrigen : String;
+    PaisDestino : String;
 };
 
