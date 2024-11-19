@@ -32,5 +32,6 @@ entity Producto {
     Nombre : String;
     Precio : Integer;
     Stock  : Integer;
+    Descripcion : String;
 };
 
